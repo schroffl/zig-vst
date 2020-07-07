@@ -1,6 +1,6 @@
+<h3 align="center">zig-vst</h3>
 <p align="center">
-<h3>zig-vst</h3>
-Create VST 2.4 plugins with Zig
+  Create VST 2.4 plugins with Zig
 </p>
 
 ***
