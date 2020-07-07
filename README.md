@@ -1,6 +1,6 @@
 <h3 align="center">zig-vst</h3>
 <p align="center">
-  Create VST 2.4 plugins with Zig
+  Aims to provide high- and low-level utilites for building VST 2.4 plugins with Zig.
 </p>
 
 ***
