@@ -1,6 +1,9 @@
 const std = @import("std");
+const trait = std.meta.trait;
 
 pub const api = @import("api.zig");
+pub const build_util = @import("build_util.zig");
+pub const hot_reload = @import("hot_reload.zig");
 
 pub const Info = struct {
     /// The unique ID of the VST Plugin
@@ -35,81 +38,273 @@ pub const Info = struct {
     }
 };
 
-pub fn VstPlugin(comptime info: Info, comptime T: type) type {
+pub const EmbedInfo = struct {
+    effect: api.AEffect,
+    host_callback: api.HostCallback,
+    custom_ref: ?*c_void = null,
+
+    /// TODO Find out if this even works. Ableton Live currently responds
+    ///      with 0 to every opcode I tried. Maybe it's just not supported anymore?
+    pub fn query(
+        self: *EmbedInfo,
+        code: api.Codes.PluginToHost,
+        index: i32,
+        value: isize,
+        ptr: ?*c_void,
+        opt: f32,
+    ) isize {
+        return self.queryRaw(code.toInt(), index, value, ptr, opt);
+    }
+
+    pub fn queryRaw(
+        self: *EmbedInfo,
+        opcode: i32,
+        index: i32,
+        value: isize,
+        ptr: ?*c_void,
+        opt: f32,
+    ) isize {
+        return self.host_callback(&self.effect, opcode, index, value, ptr, opt);
+    }
+
+    fn setCustomRef(self: *EmbedInfo, ptr: var) void {
+        self.custom_ref = @ptrCast(*c_void, ptr);
+    }
+
+    fn clearCustomRef(self: *EmbedInfo) void {
+        self.custom_ref = null;
+    }
+
+    fn getCustomRef(self: *EmbedInfo, comptime T: type) ?*T {
+        if (self.custom_ref) |ptr| {
+            return @ptrCast(*T, @alignCast(@alignOf(T), ptr));
+        }
+
+        return null;
+    }
+};
+
+pub fn VstPlugin(comptime info_arg: Info, comptime T: type) type {
     return struct {
+        pub const Inner = T;
+        pub const info = info_arg;
         const Self = @This();
 
+        var log_allocator = std.heap.page_allocator;
+        var external_write_log: ?hot_reload.HotReloadLog = null;
+
         inner: T,
-        effect: api.AEffect,
+        embed_info: *EmbedInfo,
+        allocator: *std.mem.Allocator,
 
         /// TODO Remove the dummy argument once https://github.com/ziglang/zig/issues/5380
         ///      gets fixed
-        pub fn exportVSTPluginMain(comptime dummy: void) void {
+        pub fn generateExports(comptime dummy: void) void {
+            comptime std.debug.assert(@TypeOf(VSTPluginMain) == api.PluginMain);
             @export(VSTPluginMain, .{
                 .name = "VSTPluginMain",
                 .linkage = .Strong,
             });
+
+            comptime std.debug.assert(@TypeOf(VSTHotReloadInit) == hot_reload.HotReloadInit);
+            @export(VSTHotReloadInit, .{
+                .name = "VSTHotReloadInit",
+                .linkage = .Strong,
+            });
+
+            comptime std.debug.assert(@TypeOf(VSTHotReloadDeinit) == hot_reload.HotReloadDeinit);
+            @export(VSTHotReloadDeinit, .{
+                .name = "VSTHotReloadDeinit",
+                .linkage = .Strong,
+            });
+
+            comptime std.debug.assert(@TypeOf(VSTHotReloadUpdate) == hot_reload.HotReloadUpdate);
+            @export(VSTHotReloadUpdate, .{
+                .name = "VSTHotReloadUpdate",
+                .linkage = .Strong,
+            });
+        }
+
+        /// This will set up a log handler, which you should probably do
+        /// when you make use of hot reloads.
+        pub fn generateTopLevelHandlers() type {
+            // TODO How do handle logging in standalone mode?
+            return struct {
+                pub fn log(
+                    comptime level: std.log.Level,
+                    comptime scope: @TypeOf(.EnumLiteral),
+                    comptime format: []const u8,
+                    args: var,
+                ) void {
+                    if (external_write_log) |log_fn| {
+                        const data = std.fmt.allocPrint(log_allocator, format, args) catch return;
+                        defer log_allocator.free(data);
+
+                        log_fn(data.ptr, data.len);
+                    }
+                }
+            };
+        }
+
+        fn VSTHotReloadInit(embed_info: *EmbedInfo, log_fn: hot_reload.HotReloadLog) callconv(.Cold) bool {
+            external_write_log = log_fn;
+
+            // The host_callback is expected to already be set
+            // by the hot reload wrapper at this point.
+            initEmbedInfo(embed_info, embed_info.host_callback);
+
+            _ = sharedInit(std.heap.page_allocator, embed_info) catch return false;
+
+            return true;
+        }
+
+        fn VSTHotReloadDeinit(embed_info: *EmbedInfo) callconv(.Cold) void {
+            var self = embed_info.getCustomRef(Self) orelse return;
+            self.sharedDeinit();
+        }
+
+        fn VSTHotReloadUpdate(embed_info: *EmbedInfo, log_fn: hot_reload.HotReloadLog) callconv(.Cold) bool {
+            external_write_log = log_fn;
+
+            const old_effect = embed_info.*.effect;
+            initEmbedInfo(embed_info, embed_info.host_callback);
+            _ = sharedInit(std.heap.page_allocator, embed_info) catch return false;
+
+            // TODO Find out which properties can be updated. Especially, what
+            //      about num_params? Since the hot reload feature is only
+            //      intended for development we might be able to get away with
+            //      pre-defining a huge amount of parameters and just have
+            //      the majority of them be unused and labelled as such.
+            //      If that works: Are we able to tell the host to reload the
+            //      parameters? If I add a new one I want its name to show up
+            //      in the DAW.
+
+            const new_effect = embed_info.effect;
+
+            if (old_effect.version != new_effect.version) {
+                std.log.warn(.zig_vst, "You can't change the plugin version between hot reloads\n", .{});
+            }
+
+            if (old_effect.flags != new_effect.flags) {
+                std.log.warn(.zig_vst, "You can't change the plugin flags between hot reloads\n", .{});
+            }
+
+            if (old_effect.unique_id != new_effect.unique_id) {
+                std.log.warn(.zig_vst, "You can't change the plugin unique_id between hot reloads\n", .{});
+            }
+
+            if (old_effect.initial_delay != new_effect.initial_delay) {
+                std.log.warn(.zig_vst, "You can't change the plugin initial_delay between hot reloads\n", .{});
+            }
+
+            if (old_effect.num_inputs != info.inputs or old_effect.num_outputs != info.outputs) {
+                // TODO Find out if this works
+                _ = embed_info.query(.IOChanged, 0, 0, null, 0);
+            }
+
+            return true;
         }
 
         fn VSTPluginMain(callback: api.HostCallback) callconv(.C) ?*api.AEffect {
             var allocator = std.heap.page_allocator;
-            var instance = allocator.create(Self) catch return null;
 
-            const takes_allocator = false;
-            const returns_error = false;
+            // TODO Maybe the VSTPluginMain should not initialize the inner
+            //      value. Otherwise it always gets called, even when the
+            //      VST host is just reading basic information.
 
-            if (!takes_allocator and !returns_error) {
-                instance.inner = T.init();
-            } else if (takes_allocator and !returns_error) {
-                instance.inner = T.init(allocator);
-            } else if (!takes_allocator and returns_error) {
-                instance.inner = T.init() catch return null;
-            } else if (takes_allocator and returns_error) {
-                instance.inner = T.init(allocator) catch return null;
-            }
+            var embed_info = allocator.create(EmbedInfo) catch return null;
+            initEmbedInfo(embed_info, callback);
 
-            instance.effect = .{
-                .dispatcher = dispatcherCallback,
-                .setParameter = setParameterCallback,
-                .getParameter = getParameterCallback,
-                .processReplacing = processReplacingCallback,
-                .processReplacingF64 = processReplacingCallbackF64,
-                .num_programs = 0,
-                .num_params = 0,
-                .num_inputs = info.inputs,
-                .num_outputs = info.outputs,
-                .flags = api.Plugin.Flag.toBitmask(info.flags),
-                .initial_delay = info.delay,
-                .unique_id = info.id,
-                .version = info.versionToI32(),
+            var self = sharedInit(allocator, embed_info) catch return null;
+
+            return &self.embed_info.effect;
+        }
+
+        fn initEmbedInfo(embed_info: *EmbedInfo, callback: api.HostCallback) void {
+            embed_info.* = .{
+                .host_callback = callback,
+                .effect = .{
+                    .dispatcher = dispatcherCallback,
+                    .setParameter = setParameterCallback,
+                    .getParameter = getParameterCallback,
+                    .processReplacing = processReplacingCallback,
+                    .processReplacingF64 = processReplacingCallbackF64,
+                    .num_programs = 0,
+                    .num_params = 0,
+                    .num_inputs = info.inputs,
+                    .num_outputs = info.outputs,
+                    .flags = api.Plugin.Flag.toBitmask(info.flags),
+                    .initial_delay = info.delay,
+                    .unique_id = info.id,
+                    .version = info.versionToI32(),
+                },
+            };
+        }
+
+        fn sharedInit(allocator: *std.mem.Allocator, embed_info: *EmbedInfo) !*Self {
+            var self = try allocator.create(Self);
+
+            self.embed_info = embed_info;
+            self.embed_info.setCustomRef(self);
+
+            self.allocator = allocator;
+
+            var effect = &embed_info.effect;
+            effect.dispatcher = dispatcherCallback;
+            effect.setParameter = setParameterCallback;
+            effect.getParameter = getParameterCallback;
+            effect.processReplacing = processReplacingCallback;
+            effect.processReplacingF64 = processReplacingCallbackF64;
+
+            const type_info = @typeInfo(@TypeOf(T.create)).Fn;
+            const returns_error = comptime trait.is(.ErrorUnion)(type_info.return_type.?);
+            const takes_allocator = comptime blk_takes_allocator: {
+                const args = type_info.args;
+                break :blk_takes_allocator args.len == 2 and args[1].arg_type == *std.mem.Allocator;
             };
 
-            std.debug.warn("{}\n", .{instance.effect});
+            if (!takes_allocator and !returns_error) {
+                T.create(&self.inner);
+            } else if (takes_allocator and !returns_error) {
+                T.create(&self.inner, allocator);
+            } else if (!takes_allocator and returns_error) {
+                T.create(&self.inner) catch return null;
+            } else if (takes_allocator and returns_error) {
+                T.create(&self.inner, allocator) catch return null;
+            }
 
-            return &instance.effect;
+            return self;
+        }
+
+        fn sharedDeinit(self: *Self) void {
+            if (comptime trait.hasFn("deinit")(T)) {
+                T.deinit(&self.inner);
+            }
+
+            self.embed_info.clearCustomRef();
+            self.allocator.destroy(self);
+        }
+
+        fn fromEffectPtr(effect: *api.AEffect) ?*Self {
+            const embed_info = @fieldParentPtr(EmbedInfo, "effect", effect);
+            return embed_info.getCustomRef(Self);
         }
 
         fn dispatcherCallback(effect: *api.AEffect, opcode: i32, index: i32, value: isize, ptr: ?*c_void, opt: f32) callconv(.C) isize {
-            std.debug.print("Got Opcode: {}\n", .{opcode});
+            const self = fromEffectPtr(effect) orelse unreachable;
+            const code = api.Codes.HostToPlugin.fromInt(opcode) catch return -1;
 
-            switch (opcode) {
-                // GetProductName
-                48 => {
-                    setData(ptr.?, info.name, api.ProductNameMaxLength);
-                },
-                // GetVendorName
-                47 => {
-                    setData(ptr.?, info.vendor, api.VendorNameMaxLength);
-                },
-                // GetCategory
-                35 => {
-                    return @intCast(isize, @enumToInt(info.category));
-                },
-                // GetCategoryVersion
-                58 => {
-                    return 2400;
-                },
-                else => return 0,
+            switch (code) {
+                .Initialize => {},
+                .Shutdown => self.sharedDeinit(),
+                .GetProductName => setData(ptr.?, info.name, api.ProductNameMaxLength),
+                .GetVendorName => setData(ptr.?, info.vendor, api.VendorNameMaxLength),
+                .GetCategory => return info.category.toI32(),
+                .GetApiVersion => return 2400,
+                .SetSampleRate => {},
+                .SetBufferSize => {},
+                .StateChange => {},
+                else => {},
             }
 
             return 0;
@@ -126,40 +321,39 @@ pub fn VstPlugin(comptime info: Info, comptime T: type) type {
 
             const ins = inputs[0..info.inputs];
             const outs = outputs[0..info.outputs];
+
+            const self = fromEffectPtr(effect) orelse return;
+            self.inner.process(outputs[0], sample_frames);
         }
 
         fn processReplacingCallbackF64(effect: *api.AEffect, inputs: [*c][*c]f64, outputs: [*c][*c]f64, sample_frames: i32) callconv(.C) void {}
-
-        fn setData(ptr: *c_void, data: []const u8, max_length: usize) void {
-            const buf_ptr = @ptrCast([*c]u8, ptr);
-            const copy_len = std.math.min(max_length - 1, data.len);
-
-            @memcpy(buf_ptr, data.ptr, copy_len);
-            std.mem.set(u8, buf_ptr[copy_len..max_length], 0);
-        }
     };
 }
 
-test "VstPlugin" {
-    const Plugin = VstPlugin(
-        Info{
-            .id = [_]u8{ 1, 2, 3, 4 },
-            .version = [_]u8{ 1, 2, 3, 4 },
-            .name = "Test Plugin",
-            .vendor = "Test Vendor",
-            .inputs = 0,
-            .outputs = 2,
-            .delay = 0,
-            .flags = &[_]api.Plugin.Flag{ .IsSynth, .CanReplacing },
-        },
-        struct {
-            frequency: f32,
+/// Copy data to the given location. The max_length parameter should include 1
+/// byte for a null character. So if you pass a max_length of 64 a maximum of
+/// 63 bytes will be copied from the data.
+/// The indices from data.len until max_length will be filled with zeroes.
+fn setData(ptr: *c_void, data: []const u8, max_length: usize) void {
+    const buf_ptr = @ptrCast([*]u8, ptr);
+    const copy_len = std.math.min(max_length - 1, data.len);
 
-            // pub fn process(
-        },
-    );
+    @memcpy(buf_ptr, data.ptr, copy_len);
+    std.mem.set(u8, buf_ptr[copy_len..max_length], 0);
 }
 
-test "" {
-    _ = @import("api.zig");
+test "setData" {
+    var raw_data = [_]u8{0xaa} ** 20;
+    var c_ptr = @ptrCast(*c_void, &raw_data);
+    setData(c_ptr, "Hello World!", 15);
+
+    const correct = "Hello World!" ++ [_]u8{0} ** 3 ++ [_]u8{0xaa} ** 5;
+    std.testing.expect(std.mem.eql(u8, &raw_data, correct));
+
+    std.mem.set(u8, &raw_data, 0xaa);
+    setData(c_ptr, "This is a very long string. Too long, in fact!", 20);
+
+    const correct2 = "This is a very long" ++ [_]u8{0};
+    std.testing.expectEqual(20, correct2.len);
+    std.testing.expect(std.mem.eql(u8, &raw_data, correct2));
 }

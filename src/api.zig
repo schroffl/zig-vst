@@ -60,6 +60,46 @@ test "AEffect" {
     testing.expectEqual(@as(i32, 0x56737450), AEffect.Magic);
 }
 
+pub const Codes = struct {
+    pub const HostToPlugin = enum(i32) {
+        Initialize = 0,
+        Shutdown = 1,
+        GetProductName = 48,
+        GetVendorName = 47,
+        GetCategory = 35,
+        GetApiVersion = 58,
+        SetSampleRate = 10,
+        SetBufferSize = 11,
+        StateChange = 12,
+        GetMidiInputs = 78,
+        GetMidiOutputs = 79,
+
+        pub fn toInt(self: HostToPlugin) i32 {
+            return @enumToInt(self);
+        }
+
+        pub fn fromInt(int: var) !HostToPlugin {
+            return std.meta.intToEnum(HostToPlugin, int);
+        }
+    };
+
+    pub const PluginToHost = enum(i32) {
+        GetVersion = 1,
+        IOChanged = 13,
+        GetSampleRate = 16,
+        GetBufferSize = 17,
+        GetVendorString = 32,
+
+        pub fn toInt(self: PluginToHost) i32 {
+            return @enumToInt(self);
+        }
+
+        pub fn fromInt(int: var) !PluginToHost {
+            return std.meta.intToEnum(HostToPlugin, int);
+        }
+    };
+};
+
 pub const Plugin = struct {
     pub const Flag = enum(i32) {
         HasEditor = 1,
@@ -80,7 +120,7 @@ pub const Plugin = struct {
         }
     };
 
-    pub const Category = enum(usize) {
+    pub const Category = enum {
         Unknown,
         Effect,
         Synthesizer,
@@ -93,6 +133,10 @@ pub const Plugin = struct {
         OfflineProcess,
         Shell,
         Generator,
+
+        pub fn toI32(self: Category) i32 {
+            return @intCast(i32, @enumToInt(self));
+        }
     };
 };
 

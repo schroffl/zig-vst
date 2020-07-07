@@ -4,9 +4,6 @@ const vst_build = @import("src/main.zig").build_util;
 pub fn build(b: *Builder) void {
     const mode = b.standardReleaseOptions();
     const target = b.standardTargetOptions(.{});
-    const lib = b.addStaticLibrary("zig-vst", "src/main.zig");
-    lib.setBuildMode(mode);
-    lib.install();
 
     var main_tests = b.addTest("src/main.zig");
     main_tests.setBuildMode(mode);
@@ -19,14 +16,18 @@ pub fn build(b: *Builder) void {
         .version = .{
             .major = 0,
             .minor = 1,
-            .patch = 2,
+            .patch = 0,
         },
         .macos_bundle = .{
-            .bundle_identifier = "org.zig-vst.example-synth",
+            .bundle_identifier = "org.zig-vst.example-plugin",
         },
         .mode = mode,
         .target = target,
     });
 
-    b.default_step.dependOn(vst_step.step);
+    var hr = vst_step.hotReload();
+    b.default_step.dependOn(&hr.step);
+
+    const log_step = b.step("logs", "Show hot reload logs");
+    log_step.dependOn(hr.trackLogs());
 }
