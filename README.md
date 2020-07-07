@@ -9,4 +9,4 @@ It's too early for any documentation, so it's still TODO.
 
 ### Hot Reloading
 Not very mature yet, but here's a demo:
-[Hot Reload Demo](hot-reload-demo.gif)
+![Hot Reload Demo](hot-reload-demo.gif)
