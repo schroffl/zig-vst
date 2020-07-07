@@ -130,8 +130,8 @@ pub const HotReloadStep = struct {
             \\pub const log_path = "{}";
             \\
         , .{
-            paths.watch_path,
-            paths.log_path,
+            escapeBackslash(builder.allocator, paths.watch_path) catch unreachable,
+            escapeBackslash(builder.allocator, paths.log_path) catch unreachable,
         });
 
         const package_write_step = builder.addWriteFile(paths.package_path, package_source);
@@ -377,4 +377,24 @@ fn replace(
     std.mem.copy(u8, dest[index + replacement.len ..], src[index + needle.len ..]);
 
     return dest;
+}
+
+fn escapeBackslash(allocator: *std.mem.Allocator, path: []const u8) ![]const u8 {
+    var count_iterator = std.mem.split(path, "\\");
+    var count: usize = 0;
+
+    while (count_iterator.next()) |_| count += 1;
+
+    var list = try allocator.alloc([]const u8, count);
+    defer allocator.free(list);
+
+    var iterator = std.mem.split(path, "\\");
+    var i: usize = 0;
+
+    while (iterator.next()) |part| {
+        list[i] = part;
+        i += 1;
+    }
+
+    return std.mem.join(allocator, "\\\\", list);
 }
