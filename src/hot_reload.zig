@@ -271,6 +271,7 @@ pub fn HotReloadWrapper(meta: MetaInfo) type {
         fn readLibPath(self: *Self) ![]const u8 {
             const cwd = std.fs.cwd();
             var watch_file = try cwd.openFile(self.meta.watch_path, .{});
+            defer watch_file.close();
 
             var stat = try watch_file.stat();
             var buffer = try self.allocator.alloc(u8, stat.size);
@@ -397,6 +398,8 @@ pub fn HotReloadWrapper(meta: MetaInfo) type {
                 // TODO When you delete zig-cache this call fails, so you have
                 //      to restart the plugin to have automatic reloads again.
                 const watch_file = try cwd.openFile(self.meta.watch_path, .{});
+                defer watch_file.close();
+
                 const stat = try watch_file.stat();
 
                 if (maybe_last) |mtime| {
