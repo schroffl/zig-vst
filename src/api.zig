@@ -53,7 +53,7 @@ pub const AEffect = extern struct {
 
     future: [56]u8 = [_]u8{0} ** 56,
 
-    fn deprecatedProcessCallback(effect: *AEffect, inputs: [*c][*c]f32, outputs: [*c][*c]f32, sample_frames: i32) callconv(.C) void {}
+    fn deprecatedProcessCallback(effect: *AEffect, inputs: [*][*]f32, outputs: [*][*]f32, sample_frames: i32) callconv(.C) void {}
 };
 
 test "AEffect" {
@@ -66,7 +66,10 @@ pub const Codes = struct {
         Shutdown = 1,
         GetProductName = 48,
         GetVendorName = 47,
+        GetInputInfo = 33,
+        GetOutputInfo = 34,
         GetCategory = 35,
+        GetTailSize = 52,
         GetApiVersion = 58,
         SetSampleRate = 10,
         SetBufferSize = 11,
@@ -109,11 +112,15 @@ pub const Plugin = struct {
         NoSoundInStop = 1 << 9,
         CanDoubleReplacing = 1 << 12,
 
+        pub fn toI32(self: Flag) i32 {
+            return @intCast(i32, @enumToInt(self));
+        }
+
         pub fn toBitmask(flags: []const Flag) i32 {
             var result: i32 = 0;
 
             for (flags) |flag| {
-                result = result | @enumToInt(flag);
+                result = result | flag.toI32();
             }
 
             return result;
@@ -167,15 +174,15 @@ pub const DispatcherCallback = fn (
 
 pub const ProcessCallback = fn (
     effect: *AEffect,
-    inputs: [*c][*c]f32,
-    outputs: [*c][*c]f32,
+    inputs: [*][*]f32,
+    outputs: [*][*]f32,
     sample_frames: i32,
 ) callconv(.C) void;
 
 pub const ProcessCallbackF64 = fn (
     effect: *AEffect,
-    inputs: [*c][*c]f64,
-    outputs: [*c][*c]f64,
+    inputs: [*][*]f64,
+    outputs: [*][*]f64,
     sample_frames: i32,
 ) callconv(.C) void;
 

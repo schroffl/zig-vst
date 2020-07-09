@@ -79,6 +79,9 @@ pub const BuildStep = struct {
         }
     }
 
+    // TODO Have this function take a package, which should point to
+    //      this library. That way we can resolve the paths to
+    //      src/hr_plugin.zig etc.
     pub fn hotReload(self: *BuildStep) *HotReloadStep {
         var lib_step = switch (self.child) {
             .MacOSBundle => |bundle_step| bundle_step.lib_step,
