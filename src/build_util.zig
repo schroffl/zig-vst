@@ -10,6 +10,7 @@ pub const BuildStep = struct {
     options: Options,
     child: Child,
     step: *std.build.Step,
+    source_path: []const u8,
 
     pub const Options = struct {
         name: []const u8,
@@ -55,6 +56,7 @@ pub const BuildStep = struct {
                     .step = undefined,
                     .builder = builder,
                     .options = options,
+                    .source_path = source_path,
                 };
 
                 self.step = &self.child.MacOSBundle.step;
@@ -69,6 +71,7 @@ pub const BuildStep = struct {
                     .step = undefined,
                     .builder = builder,
                     .options = options,
+                    .source_path = source_path,
                 };
 
                 lib_step.install();
@@ -88,7 +91,14 @@ pub const BuildStep = struct {
             .DefaultStep => |default_step| default_step,
         };
 
-        return HotReloadStep.create(self.builder, lib_step, self.options);
+        var file_name_sha1 = std.crypto.Sha1.init();
+        var out: [20]u8 = undefined;
+        file_name_sha1.update(self.source_path);
+        file_name_sha1.final(&out);
+
+        const meta_id = self.builder.fmt("{x}", .{out});
+
+        return HotReloadStep.create(self.builder, lib_step, self.options, meta_id);
     }
 };
 
@@ -100,6 +110,7 @@ pub const HotReloadStep = struct {
     watch_lib_step: *std.build.LibExeObjStep,
     vst_step: *BuildStep,
     meta_package: std.build.Pkg,
+    meta_id: []const u8,
 
     const Paths = struct {
         base: []const u8,
@@ -112,6 +123,7 @@ pub const HotReloadStep = struct {
         builder: *std.build.Builder,
         watch_lib_step: *std.build.LibExeObjStep,
         parent_options: BuildStep.Options,
+        meta_id: []const u8,
     ) *HotReloadStep {
         var self = builder.allocator.create(HotReloadStep) catch unreachable;
         var options = parent_options;
@@ -124,6 +136,7 @@ pub const HotReloadStep = struct {
         self.builder = builder;
         self.watch_lib_step = watch_lib_step;
         self.vst_step = BuildStep.create(builder, "src/hr_plugin.zig", options);
+        self.meta_id = meta_id;
 
         const paths = self.getPaths() catch unreachable;
         self.setupPaths(paths) catch unreachable;
@@ -163,11 +176,8 @@ pub const HotReloadStep = struct {
         const cwd = std.fs.cwd();
         const allocator = self.builder.allocator;
 
-        // TODO Derive for BuildStep.Options or something in order
-        //      to avoid colissions with multiple vst plugins in
-        //      the same codebase.
-        const meta_id = "3409283";
-        const meta_dir = self.builder.fmt("vst-meta-{}", .{meta_id});
+        const meta_id = self.meta_id;
+        const meta_dir = self.builder.fmt("vst-meta/{}", .{meta_id});
 
         const meta_path = self.builder.getInstallPath(.Prefix, meta_dir);
 
