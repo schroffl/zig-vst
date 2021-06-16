@@ -35,7 +35,9 @@ pub const BuildStep = struct {
         source_path: []const u8,
         options: Options,
     ) BuildStep {
-        var lib_step = builder.addSharedLibrary(options.name, source_path, options.version);
+        var lib_step = builder.addSharedLibrary(options.name, source_path, .{
+            .versioned = options.version,
+        });
         lib_step.setTarget(options.target);
 
         if (options.mode) |mode| {
@@ -43,7 +45,7 @@ pub const BuildStep = struct {
         }
 
         switch (options.target.getOsTag()) {
-            .macosx => {
+            .macos => {
                 // TODO There's probably a nicer way to do this.
                 if (options.macos_bundle == null) {
                     @panic("You cannot build a macOS VST without setting the required bundle information");
@@ -91,12 +93,13 @@ pub const BuildStep = struct {
             .DefaultStep => |default_step| default_step,
         };
 
-        var file_name_sha1 = std.crypto.Sha1.init();
+        var file_name_sha1 = std.crypto.hash.Sha1.init(.{});
         var out: [20]u8 = undefined;
         file_name_sha1.update(self.source_path);
         file_name_sha1.final(&out);
 
-        const meta_id = self.builder.fmt("{x}", .{out});
+        const out_text = std.fmt.fmtSliceHexLower(&out);
+        const meta_id = self.builder.fmt("{}", .{out_text});
 
         return HotReloadStep.create(self.builder, lib_step, self.options, meta_id);
     }
@@ -141,11 +144,7 @@ pub const HotReloadStep = struct {
         const paths = self.getPaths() catch unreachable;
         self.setupPaths(paths) catch unreachable;
 
-        const package_source = builder.fmt(
-            \\pub const watch_path = "{}";
-            \\pub const log_path = "{}";
-            \\
-        , .{
+        const package_source = builder.fmt("pub const watch_path = \"{s}\";\npub const log_path = \"{s}\";\n", .{
             escapeBackslash(builder.allocator, paths.watch_path) catch unreachable,
             escapeBackslash(builder.allocator, paths.log_path) catch unreachable,
         });
@@ -177,7 +176,7 @@ pub const HotReloadStep = struct {
         const allocator = self.builder.allocator;
 
         const meta_id = self.meta_id;
-        const meta_dir = self.builder.fmt("vst-meta/{}", .{meta_id});
+        const meta_dir = self.builder.fmt("vst-meta/{s}", .{meta_id});
 
         const meta_path = self.builder.getInstallPath(.Prefix, meta_dir);
 
@@ -280,7 +279,7 @@ pub const MacOSBundleStep = struct {
 
         const vst_path = self.builder.getInstallPath(.Prefix, "vst");
 
-        const bundle_basename = self.builder.fmt("{}.vst", .{self.options.name});
+        const bundle_basename = self.builder.fmt("{s}.vst", .{self.options.name});
         const bundle_path = try std.fs.path.join(self.builder.allocator, &[_][]const u8{
             vst_path,
             bundle_basename,
@@ -360,7 +359,10 @@ fn replaceVariables(
     var buffer = try std.mem.dupe(allocator, u8, initial);
 
     while (it.next()) |entry| {
-        while (replace(allocator, buffer, entry.key, entry.value)) |new_buffer| {
+        const key = entry.key_ptr.*;
+        const value = entry.value_ptr.*;
+
+        while (replace(allocator, buffer, key, value)) |new_buffer| {
             allocator.free(buffer);
             buffer = new_buffer;
         } else |err| {

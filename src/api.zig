@@ -57,7 +57,7 @@ pub const AEffect = extern struct {
 };
 
 test "AEffect" {
-    testing.expectEqual(@as(i32, 0x56737450), AEffect.Magic);
+    try testing.expectEqual(@as(i32, 0x56737450), AEffect.Magic);
 }
 
 pub const Codes = struct {
@@ -81,7 +81,7 @@ pub const Codes = struct {
             return @enumToInt(self);
         }
 
-        pub fn fromInt(int: var) !HostToPlugin {
+        pub fn fromInt(int: anytype) !HostToPlugin {
             return std.meta.intToEnum(HostToPlugin, int);
         }
     };
@@ -97,7 +97,7 @@ pub const Codes = struct {
             return @enumToInt(self);
         }
 
-        pub fn fromInt(int: var) !PluginToHost {
+        pub fn fromInt(int: anytype) !PluginToHost {
             return std.meta.intToEnum(HostToPlugin, int);
         }
     };

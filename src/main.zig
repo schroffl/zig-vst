@@ -69,7 +69,7 @@ pub const EmbedInfo = struct {
         return self.host_callback(&self.effect, opcode, index, value, ptr, opt);
     }
 
-    fn setCustomRef(self: *EmbedInfo, ptr: var) void {
+    fn setCustomRef(self: *EmbedInfo, ptr: anytype) void {
         self.custom_ref = @ptrCast(*c_void, ptr);
     }
 
@@ -135,7 +135,7 @@ pub fn VstPlugin(comptime info_arg: Info, comptime T: type) type {
                     comptime level: std.log.Level,
                     comptime scope: @TypeOf(.EnumLiteral),
                     comptime format: []const u8,
-                    args: var,
+                    args: anytype,
                 ) void {
                     if (external_write_log) |log_fn| {
                         const data = std.fmt.allocPrint(log_allocator, format, args) catch return;
