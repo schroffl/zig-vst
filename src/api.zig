@@ -64,6 +64,7 @@ pub const Codes = struct {
     pub const HostToPlugin = enum(i32) {
         Initialize = 0,
         Shutdown = 1,
+        GetCurrentPresetNum = 3,
         GetProductName = 48,
         GetVendorName = 47,
         GetInputInfo = 33,
@@ -76,6 +77,25 @@ pub const Codes = struct {
         StateChange = 12,
         GetMidiInputs = 78,
         GetMidiOutputs = 79,
+        GetMidiKeyName = 66,
+        StartProcess = 71,
+        StopProcess = 72,
+        GetPresetName = 29,
+        CanDo = 51,
+        GetVendorVersion = 49,
+        GetEffectName = 45,
+        EditorGetRect = 13,
+        EditorOpen = 14,
+        EditorClose = 15,
+        ChangePreset = 2,
+        GetCurrentPresetName = 5,
+        GetParameterLabel = 6,
+        GetParameterDisplay = 7,
+        GetParameterName = 8,
+        CanBeAutomated = 26,
+        EditorIdle = 19,
+        EditorKeyDown = 59,
+        EditorKeyUp = 60,
 
         pub fn toInt(self: HostToPlugin) i32 {
             return @enumToInt(self);
@@ -147,8 +167,16 @@ pub const Plugin = struct {
     };
 };
 
+pub const Rect = extern struct {
+    top: i16,
+    left: i16,
+    bottom: i16,
+    right: i16,
+};
+
 pub const ProductNameMaxLength = 64;
 pub const VendorNameMaxLength = 64;
+pub const ParamMaxLength = 32;
 
 pub const PluginMain = fn (
     callback: HostCallback,
