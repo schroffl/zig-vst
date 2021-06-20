@@ -56,12 +56,22 @@ pub fn AudioBuffer(comptime layout: IOLayout, comptime T: type) type {
             } else @compileError("Could not find channel with name '" ++ name ++ "'");
         }
 
+        pub inline fn getBuffer(self: *Self, comptime name: []const u8) []f32 {
+            const index = comptime getIndex(name);
+            return self.raw[index][0..self.frames];
+        }
+
+        pub inline fn getConstBuffer(self: Self, comptime name: []const u8) []const f32 {
+            const index = comptime getIndex(name);
+            return self.raw[index][0..self.frames];
+        }
+
         pub inline fn setFrame(self: *Self, comptime name: []const u8, frame: usize, value: T) void {
             const index = comptime getIndex(name);
             self.raw[index][frame] = value;
         }
 
-        pub inline fn getFrame(self: *Self, comptime name: []const u8, frame: usize) T {
+        pub inline fn getFrame(self: Self, comptime name: []const u8, frame: usize) T {
             const index = comptime getIndex(name);
             return self.raw[index][frame];
         }
