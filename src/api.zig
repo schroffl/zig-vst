@@ -96,6 +96,7 @@ pub const Codes = struct {
         EditorIdle = 19,
         EditorKeyDown = 59,
         EditorKeyUp = 60,
+        ProcessEvents = 25,
 
         pub fn toInt(self: HostToPlugin) i32 {
             return @enumToInt(self);
@@ -224,3 +225,145 @@ pub const GetParameterCallback = fn (
     effect: *AEffect,
     index: i32,
 ) callconv(.C) f32;
+
+/// This is should eventually replace HostToPlugin.Code.
+/// Like everything in this library it is subject to change and not yet final.
+pub const HighLevelCode = union(enum) {
+    SetSampleRate: f32,
+    GetProductName: [*:0]u8,
+    GetVendorName: [*:0]u8,
+    GetPresetName: [*:0]u8,
+    GetApiVersion: void,
+    SetBufferSize: isize,
+    ProcessEvents: *const VstEvents,
+    EditorGetRect: *?*Rect,
+    EditorOpen: void,
+    EditorClose: void,
+    GetTailSize: void,
+
+    pub fn parseOpCode(opcode: i32) ?std.meta.Tag(HighLevelCode) {
+        const tag: std.meta.Tag(HighLevelCode) = switch (opcode) {
+            10 => .SetSampleRate,
+            11 => .SetBufferSize,
+            25 => .ProcessEvents,
+            else => return null,
+        };
+
+        return tag;
+    }
+
+    pub fn parse(
+        opcode: i32,
+        index: i32,
+        value: isize,
+        ptr: ?*c_void,
+        opt: f32,
+    ) ?HighLevelCode {
+        return switch (opcode) {
+            10 => .{ .SetSampleRate = opt },
+            11 => .{ .SetBufferSize = value },
+
+            13 => .{ .EditorGetRect = @ptrCast(*?*Rect, @alignCast(@alignOf(*?*Rect), ptr)) },
+            14 => .{ .EditorOpen = {} },
+            15 => .{ .EditorClose = {} },
+
+            25 => .{ .ProcessEvents = @ptrCast(*VstEvents, @alignCast(@alignOf(VstEvents), ptr)) },
+
+            29 => .{ .GetPresetName = @ptrCast([*:0]u8, ptr) },
+
+            47 => .{ .GetVendorName = @ptrCast([*:0]u8, ptr) },
+            48 => .{ .GetProductName = @ptrCast([*:0]u8, ptr) },
+
+            else => return null,
+        };
+    }
+};
+
+pub const VstEvents = struct {
+    num_events: i32,
+    reserved: *isize,
+    events: [*]VstEvent,
+
+    pub fn iterate(self: *const VstEvents) Iterator {
+        return .{ .index = 0, .ptr = self };
+    }
+
+    pub const Iterator = struct {
+        index: usize,
+        ptr: *const VstEvents,
+
+        pub fn next(self: *Iterator) ?VstEvent {
+            if (self.index >= self.ptr.num_events) {
+                return null;
+            }
+
+            const ev = self.ptr.events[self.index];
+            self.index += 1;
+            return ev;
+        }
+    };
+};
+
+pub const VstEvent = struct {
+    pub const Type = enum {
+        midi = 1,
+        audio = 2,
+        video = 3,
+        parameter = 4,
+        trigger = 5,
+        sysex = 6,
+    };
+
+    typ: Type,
+    byte_size: i32,
+    delta_frames: i32,
+    flags: i32,
+    data: [16]u8,
+};
+
+pub const Event = union(enum) {
+    Midi: struct {
+        flags: i32,
+        note_length: i32,
+        note_offset: i32,
+        data: [4]u8,
+        detune: i8,
+        note_off_velocity: u8,
+    },
+
+    pub fn parse(event: VstEvent) Event {
+        switch (event.typ) {
+            .midi => {
+                const raw = @ptrCast(*const RawVstMidiEvent, &event);
+
+                return Event{ .Midi = .{
+                    .flags = raw.flags,
+                    .note_length = raw.note_length,
+                    .note_offset = raw.note_offset,
+                    .data = raw.midi_data,
+                    .detune = raw.detune,
+                    .note_off_velocity = raw.note_off_velocity,
+                } };
+            },
+            .sysex => unreachable, // TODO
+            else => unreachable,
+        }
+    }
+};
+
+pub const MidiFlags = enum(i32) {
+    is_realtime = 1 << 0,
+};
+
+pub const RawVstMidiEvent = struct {
+    typ: VstEvent.Type,
+    byte_size: i32,
+    delta_frames: i32,
+    flags: i32,
+    note_length: i32,
+    note_offset: i32,
+    midi_data: [4]u8,
+    detune: i8,
+    note_off_velocity: u8,
+    reserved: [2]u8,
+};
