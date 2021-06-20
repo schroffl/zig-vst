@@ -3,23 +3,23 @@
 <plist version="1.0">
     <dict>
         <key>CFBundleDevelopmentRegion</key>
-        <string>$ZIGVST_CFBundleDevelopmentRegion</string>
+        <string>$</string>
         <key>CFBundleExecutable</key>
-        <string>$ZIGVST_CFBundleExecutable</string>
+        <string>$</string>
         <key>CFBundleIdentifier</key>
-        <string>$ZIGVST_CFBundleIdentifier</string>
+        <string>$</string>
         <key>CFBundleInfoDictionaryVersion</key>
         <string>6.0</string>
         <key>CFBundleName</key>
-        <string>$ZIGVST_CFBundleName</string>
+        <string>$</string>
         <key>CFBundlePackageType</key>
         <string>BNDL</string>
         <key>CFBundleSignature</key>
-        <string>$ZIGVST_CFBundleSignature</string>
+        <string>$</string>
         <key>CFBundleVersion</key>
-        <string>$ZIGVST_CFBundleVersion</string>
+        <string>$</string>
         <key>CFBundleShortVersionString</key>
-        <string>$ZIGVST_CFBundleVersion</string>
+        <string>$</string>
         <key>CFBundleGetInfoString</key>
         <string>TODO</string>
     </dict>
