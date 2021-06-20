@@ -48,7 +48,7 @@ pub fn create(builder: *Builder, name: []const u8, root_src: []const u8, options
 
     self.addPackage() catch unreachable;
 
-    // self.lib_step.install();
+    self.lib_step.install();
 
     self.step.dependOn(&self.lib_step.step);
 
