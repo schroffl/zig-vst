@@ -36,6 +36,8 @@ pub fn AudioBuffer(comptime layout: IOLayout, comptime T: type) type {
     return struct {
         const Self = @This();
 
+        pub const channel_count = layout.len;
+
         raw: [*][*]f32,
         frames: usize,
 
