@@ -41,10 +41,10 @@ pub fn AudioBuffer(comptime layout: IOLayout, comptime T: type) type {
         raw: [*][*]f32,
         frames: usize,
 
-        pub fn fromRaw(buffer_list: [*][*]T, frames: i32) Self {
+        pub fn fromRaw(buffer_list: [*][*]T, frames: usize) Self {
             return Self{
                 .raw = buffer_list,
-                .frames = @intCast(usize, frames),
+                .frames = frames,
             };
         }
 
