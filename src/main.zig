@@ -5,6 +5,7 @@ pub const api = @import("api.zig");
 pub const build_util = @import("build_util.zig");
 pub const hot_reload = @import("hot_reload.zig");
 pub const audio_io = @import("audio_io.zig");
+pub const helper = @import("helper.zig");
 
 pub const Info = struct {
     /// The unique ID of the VST Plugin
