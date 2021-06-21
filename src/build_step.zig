@@ -40,7 +40,7 @@ pub fn create(builder: *Builder, name: []const u8, root_src: []const u8, options
 
     self.builder = builder;
     self.name = name;
-    self.step = std.build.Step.init(.Custom, "macOS .vst bundle", builder.allocator, make);
+    self.step = std.build.Step.init(.custom, "macOS .vst bundle", builder.allocator, make);
     self.options = options;
 
     if (options.mode) |mode| self.lib_step.setBuildMode(mode);
@@ -101,7 +101,8 @@ fn makeMacOS(self: *Self) !void {
         self.name,
     });
 
-    const lib_output_path = self.lib_step.getOutputPath();
+    const output_source = self.lib_step.getOutputSource();
+    const lib_output_path = output_source.getPath(self.builder);
     try cwd.copyFile(lib_output_path, bundle_dir, binary_path, .{});
 
     const plist_file = try bundle_dir.createFile("Contents/Info.plist", .{});
@@ -114,7 +115,7 @@ fn makeMacOS(self: *Self) !void {
 }
 
 fn getOutputDir(self: *Self) ![]const u8 {
-    const vst_path = self.builder.getInstallPath(.Prefix, "vst");
+    const vst_path = self.builder.getInstallPath(.prefix, "vst");
     const bundle_basename = self.builder.fmt("{s}.vst", .{self.name});
 
     return try std.fs.path.join(self.builder.allocator, &[_][]const u8{
