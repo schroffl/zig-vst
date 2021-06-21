@@ -228,28 +228,28 @@ pub const GetParameterCallback = fn (
 
 /// This is should eventually replace HostToPlugin.Code.
 /// Like everything in this library it is subject to change and not yet final.
-pub const HighLevelCode = union(enum) {
-    SetSampleRate: f32,
-    GetProductName: [*:0]u8,
-    GetVendorName: [*:0]u8,
-    GetPresetName: [*:0]u8,
-    GetApiVersion: void,
-    SetBufferSize: isize,
-    ProcessEvents: *const VstEvents,
-    EditorGetRect: *?*Rect,
-    EditorOpen: void,
-    EditorClose: void,
-    GetTailSize: void,
+pub const HighLevelCode = union(enum(i32)) {
+    Initialize: void = 1,
+    SetSampleRate: f32 = 10,
+    SetBufferSize: isize = 11,
+
+    EditorGetRect: *?*Rect = 13,
+    EditorOpen: void = 14,
+    EditorClose: void = 15,
+
+    ProcessEvents: *const VstEvents = 25,
+    GetPresetName: [*:0]u8 = 29,
+    GetCategory: void = 35,
+
+    GetVendorName: [*:0]u8 = 47,
+    GetProductName: [*:0]u8 = 48,
+
+    GetTailSize: void = 52,
+    GetApiVersion: void = 58,
 
     pub fn parseOpCode(opcode: i32) ?std.meta.Tag(HighLevelCode) {
-        const tag: std.meta.Tag(HighLevelCode) = switch (opcode) {
-            10 => .SetSampleRate,
-            11 => .SetBufferSize,
-            25 => .ProcessEvents,
-            else => return null,
-        };
-
-        return tag;
+        const T = std.meta.Tag(HighLevelCode);
+        return std.meta.intToEnum(T, opcode) catch return null;
     }
 
     pub fn parse(
@@ -259,20 +259,26 @@ pub const HighLevelCode = union(enum) {
         ptr: ?*c_void,
         opt: f32,
     ) ?HighLevelCode {
-        return switch (opcode) {
-            10 => .{ .SetSampleRate = opt },
-            11 => .{ .SetBufferSize = value },
+        const code = HighLevelCode.parseOpCode(opcode) orelse return null;
 
-            13 => .{ .EditorGetRect = @ptrCast(*?*Rect, @alignCast(@alignOf(*?*Rect), ptr)) },
-            14 => .{ .EditorOpen = {} },
-            15 => .{ .EditorClose = {} },
+        return switch (code) {
+            .SetSampleRate => .{ .SetSampleRate = opt },
+            .SetBufferSize => .{ .SetBufferSize = value },
 
-            25 => .{ .ProcessEvents = @ptrCast(*VstEvents, @alignCast(@alignOf(VstEvents), ptr)) },
+            .EditorGetRect => .{ .EditorGetRect = @ptrCast(*?*Rect, @alignCast(@alignOf(*?*Rect), ptr)) },
+            .EditorOpen => .{ .EditorOpen = {} },
+            .EditorClose => .{ .EditorClose = {} },
 
-            29 => .{ .GetPresetName = @ptrCast([*:0]u8, ptr) },
+            .ProcessEvents => .{ .ProcessEvents = @ptrCast(*VstEvents, @alignCast(@alignOf(VstEvents), ptr)) },
 
-            47 => .{ .GetVendorName = @ptrCast([*:0]u8, ptr) },
-            48 => .{ .GetProductName = @ptrCast([*:0]u8, ptr) },
+            .GetPresetName => .{ .GetPresetName = @ptrCast([*:0]u8, ptr) },
+
+            .GetCategory => .{ .GetCategory = {} },
+
+            .GetVendorName => .{ .GetVendorName = @ptrCast([*:0]u8, ptr) },
+            .GetProductName => .{ .GetProductName = @ptrCast([*:0]u8, ptr) },
+
+            .GetApiVersion => .{ .GetApiVersion = {} },
 
             else => return null,
         };
