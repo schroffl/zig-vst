@@ -1,5 +1,6 @@
 const std = @import("std");
 const Builder = @import("std").build.Builder;
+const ReloadStep = @import("./reload_step.zig");
 
 const Self = @This();
 
@@ -51,6 +52,10 @@ pub fn create(builder: *Builder, root_src: []const u8, options: Options) *Self {
     self.step.dependOn(&self.lib_step.step);
 
     return self;
+}
+
+pub fn autoReload(self: *Self) *ReloadStep {
+    return ReloadStep.create(self);
 }
 
 pub fn getInternalLibOutputPath(self: *Self) []const u8 {
