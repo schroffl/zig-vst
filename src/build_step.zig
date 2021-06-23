@@ -13,6 +13,7 @@ pub const PackageAddOptions = union(enum) {
 };
 
 pub const Options = struct {
+    name: []const u8,
     identifier: []const u8,
     version: ?std.builtin.Version = null,
 
@@ -26,11 +27,11 @@ pub const Options = struct {
 builder: *Builder,
 lib_step: *std.build.LibExeObjStep,
 step: std.build.Step,
-name: []const u8,
 options: Options,
 
-pub fn create(builder: *Builder, name: []const u8, root_src: []const u8, options: Options) *Self {
+pub fn create(builder: *Builder, root_src: []const u8, options: Options) *Self {
     const self = builder.allocator.create(Self) catch unreachable;
+    const name = options.name;
 
     if (options.version) |version| {
         self.lib_step = builder.addSharedLibrary(name, root_src, .{ .versioned = version });
@@ -39,7 +40,6 @@ pub fn create(builder: *Builder, name: []const u8, root_src: []const u8, options
     }
 
     self.builder = builder;
-    self.name = name;
     self.step = std.build.Step.init(.custom, "macOS .vst bundle", builder.allocator, make);
     self.options = options;
 
@@ -48,11 +48,14 @@ pub fn create(builder: *Builder, name: []const u8, root_src: []const u8, options
 
     self.addPackage() catch unreachable;
 
-    self.lib_step.install();
-
     self.step.dependOn(&self.lib_step.step);
 
     return self;
+}
+
+pub fn getInternalLibOutputPath(self: *Self) []const u8 {
+    const output_source = self.lib_step.getOutputSource();
+    return output_source.getPath(self.builder);
 }
 
 fn addPackage(self: *Self) !void {
@@ -83,8 +86,35 @@ fn make(step: *std.build.Step) !void {
 
     return switch (self.options.target.getOsTag()) {
         .macos => self.makeMacOS(),
-        else => {},
+        else => self.makeDefault(),
     };
+}
+
+fn makeDefault(self: *Self) !void {
+    const cwd = std.fs.cwd();
+    const lib_output_path = self.getInternalLibOutputPath();
+
+    const extension = std.fs.path.extension(lib_output_path);
+    const version_string = if (self.options.version) |version|
+        self.builder.fmt(".{}.{}.{}", .{
+            version.major,
+            version.minor,
+            version.patch,
+        })
+    else
+        "";
+
+    const name = self.builder.fmt("{s}{s}{s}", .{
+        self.options.name,
+        version_string,
+        extension,
+    });
+
+    const vst_path = self.builder.getInstallPath(.prefix, "vst");
+    var vst_dir = try cwd.makeOpenPath(vst_path, .{});
+    defer vst_dir.close();
+
+    try cwd.copyFile(lib_output_path, vst_dir, name, .{});
 }
 
 fn makeMacOS(self: *Self) !void {
@@ -98,11 +128,10 @@ fn makeMacOS(self: *Self) !void {
 
     const binary_path = try std.fs.path.join(self.builder.allocator, &[_][]const u8{
         "Contents/MacOS",
-        self.name,
+        self.options.name,
     });
 
-    const output_source = self.lib_step.getOutputSource();
-    const lib_output_path = output_source.getPath(self.builder);
+    const lib_output_path = self.getInternalLibOutputPath();
     try cwd.copyFile(lib_output_path, bundle_dir, binary_path, .{});
 
     const plist_file = try bundle_dir.createFile("Contents/Info.plist", .{});
@@ -116,7 +145,7 @@ fn makeMacOS(self: *Self) !void {
 
 fn getOutputDir(self: *Self) ![]const u8 {
     const vst_path = self.builder.getInstallPath(.prefix, "vst");
-    const bundle_basename = self.builder.fmt("{s}.vst", .{self.name});
+    const bundle_basename = self.builder.fmt("{s}.vst", .{self.options.name});
 
     return try std.fs.path.join(self.builder.allocator, &[_][]const u8{
         vst_path,
@@ -139,9 +168,9 @@ fn writePlist(self: *Self, file: std.fs.File) !void {
     var replace_idx: usize = 0;
     const replace = [_][]const u8{
         "English",
-        self.name,
+        self.options.name,
         self.options.identifier,
-        self.name,
+        self.options.name,
         "????",
         version_string,
         version_string,
