@@ -234,23 +234,34 @@ pub const GetParameterCallback = fn (
 /// This is should eventually replace HostToPlugin.Code.
 /// Like everything in this library it is subject to change and not yet final.
 pub const HighLevelCode = union(enum(i32)) {
-    Initialize: void = 1,
+    Initialize: void = 0,
+    Shutdown: void = 1,
+    GetCurrentPresetNum: void = 3,
     SetSampleRate: f32 = 10,
     SetBufferSize: isize = 11,
-
+    StateChanged: void = 12,
     EditorGetRect: *?*Rect = 13,
-    EditorOpen: void = 14,
+    EditorOpen: ?*anyopaque = 14,
     EditorClose: void = 15,
+    EditorIdle: void = 19,
 
     ProcessEvents: *const VstEvents = 25,
     GetPresetName: [*:0]u8 = 29,
+    GetInputInfo: void = 33,
+    GetOutputInfo: void = 34,
     GetCategory: void = 35,
+
+    GetEffectName: [*:0]u8 = 45,
 
     GetVendorName: [*:0]u8 = 47,
     GetProductName: [*:0]u8 = 48,
 
+    CanDo: void = 51,
     GetTailSize: void = 52,
     GetApiVersion: void = 58,
+    GetMidiKeyName: void = 66,
+
+    StartProcess: void = 71,
 
     pub fn parseOpCode(opcode: i32) ?std.meta.Tag(HighLevelCode) {
         const T = std.meta.Tag(HighLevelCode);
@@ -261,31 +272,44 @@ pub const HighLevelCode = union(enum(i32)) {
         opcode: i32,
         index: i32,
         value: isize,
-        ptr: ?*c_void,
+        ptr: ?*anyopaque,
         opt: f32,
     ) ?HighLevelCode {
         const code = HighLevelCode.parseOpCode(opcode) orelse return null;
+        _ = index;
 
         return switch (code) {
+            .Initialize => .{ .Initialize = {} },
+            .Shutdown => .{ .Shutdown = {} },
+            .GetCurrentPresetNum => .{ .GetCurrentPresetNum = {} },
+
             .SetSampleRate => .{ .SetSampleRate = opt },
             .SetBufferSize => .{ .SetBufferSize = value },
+            .StateChanged => .{ .StateChanged = {} },
 
             .EditorGetRect => .{ .EditorGetRect = @ptrCast(*?*Rect, @alignCast(@alignOf(*?*Rect), ptr)) },
-            .EditorOpen => .{ .EditorOpen = {} },
+            .EditorOpen => .{ .EditorOpen = ptr },
             .EditorClose => .{ .EditorClose = {} },
+            .EditorIdle => .{ .EditorIdle = {} },
 
             .ProcessEvents => .{ .ProcessEvents = @ptrCast(*VstEvents, @alignCast(@alignOf(VstEvents), ptr)) },
 
             .GetPresetName => .{ .GetPresetName = @ptrCast([*:0]u8, ptr) },
-
+            .GetInputInfo => .{ .GetInputInfo = {} },
+            .GetOutputInfo => .{ .GetOutputInfo = {} },
             .GetCategory => .{ .GetCategory = {} },
 
+            .CanDo => .{ .CanDo = {} },
+            .GetTailSize => .{ .GetTailSize = {} },
+            .GetApiVersion => .{ .GetApiVersion = {} },
+            .GetMidiKeyName => .{ .GetMidiKeyName = {} },
+
+            .GetEffectName => .{ .GetEffectName = @ptrCast([*:0]u8, ptr) },
             .GetVendorName => .{ .GetVendorName = @ptrCast([*:0]u8, ptr) },
             .GetProductName => .{ .GetProductName = @ptrCast([*:0]u8, ptr) },
 
-            .GetApiVersion => .{ .GetApiVersion = {} },
+            .StartProcess => .{ .StartProcess = {} },
 
-            else => return null,
         };
     }
 };
