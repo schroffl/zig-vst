@@ -39,9 +39,9 @@ pub const AEffect = extern struct {
 
     _io_ratio: i32 = 0,
 
-    object: ?*c_void = null,
+    object: ?*anyopaque = null,
 
-    user: ?*c_void = null,
+    user: ?*anyopaque = null,
 
     unique_id: i32,
 
@@ -53,7 +53,12 @@ pub const AEffect = extern struct {
 
     future: [56]u8 = [_]u8{0} ** 56,
 
-    fn deprecatedProcessCallback(effect: *AEffect, inputs: [*][*]f32, outputs: [*][*]f32, sample_frames: i32) callconv(.C) void {}
+    fn deprecatedProcessCallback(effect: *AEffect, inputs: [*][*]f32, outputs: [*][*]f32, sample_frames: i32) callconv(.C) void {
+        _ = effect;
+        _ = inputs;
+        _ = outputs;
+        _ = sample_frames;
+    }
 };
 
 test "AEffect" {
@@ -188,7 +193,7 @@ pub const HostCallback = fn (
     opcode: i32,
     index: i32,
     value: isize,
-    ptr: ?*c_void,
+    ptr: ?*anyopaque,
     opt: f32,
 ) callconv(.C) isize;
 
@@ -197,7 +202,7 @@ pub const DispatcherCallback = fn (
     opcode: i32,
     index: i32,
     value: isize,
-    ptr: ?*c_void,
+    ptr: ?*anyopaque,
     opt: f32,
 ) callconv(.C) isize;
 
@@ -311,7 +316,7 @@ pub const VstEvents = struct {
 };
 
 pub const VstEvent = struct {
-    pub const Type = enum {
+    pub const Type = enum(u8) {
         midi = 1,
         audio = 2,
         video = 3,
